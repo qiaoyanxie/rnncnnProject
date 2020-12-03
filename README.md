@@ -7,7 +7,7 @@ This project implements the motion prediction algorithm described in the paper l
 Run NewRnnCnn.ipynb to train and view results. We used Google Colab and mount the project folder in the notebook. To reproduce this, mount this repository in your drive and change the projectPath variable to the path to point to this directory. 
 
 ## Results:
-The final loss we had was 314, though we know of some bugs that may be causing this. The loss curve is pictured below:
+The final loss we had was 314, though we know of some bugs that may be limiting this. The loss curve is pictured below:
 ![Loss](trajectoryPlots/loss.png)
 
 For visualizations, view the items in trajectoryPlots. Some sample generated trajectories are:
