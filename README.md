@@ -11,6 +11,6 @@ The final loss we had was 314, though we know of some bugs that may be limiting 
 
 ![Loss](trajectoryPlots/loss.png)
 
-For visualizations, view the items in trajectoryPlots. Some sample generated trajectories are shown in the plot below. The green car is the target vehicle, the blue is surrounding agents, and the purple is future trajectories. Each of these images is a possible trajectory predicted by a different head for the same situation.
+For visualizations, view the items in trajectoryPlots. Some sample generated trajectories are shown in the plot below. The green car is the target vehicle, the blue is surrounding agents, and the purple is future trajectories. Each of these images is a possible trajectory predicted by a different head for the same situation.  Notice how some predict the car moving faster, slower or different directions.  Later in the pipeline each of these plausible trajectories are evaluated and the model predicts which of them are the most likely.
 
 ![Trajectories](trajectoryPlots/MultiHeads.png)
