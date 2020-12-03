@@ -142,12 +142,12 @@ class MultiAgentDataset(Dataset):
 
         raster_from_agent = torch.tensor(ego_dict['raster_from_agent'], dtype=torch.float)
         targetPos = torch.tensor(ego_dict['target_positions'])
-        targetPos = torch.transpose(torch.cat((targetPos, torch.ones((targetPos.shape[0], 1))), dim=-1), 0, 1)
-        targetPos = torch.transpose(torch.matmul(raster_from_agent, targetPos), 0, 1)[:, :2]
+        # targetPos = torch.transpose(torch.cat((targetPos, torch.ones((targetPos.shape[0], 1))), dim=-1), 0, 1)
+        # targetPos = torch.transpose(torch.matmul(raster_from_agent, targetPos), 0, 1)[:, :2]
 
         agent_from_raster = torch.inverse(raster_from_agent)
 
-        return (agentsHist, agentsHist.shape[0], torch.tensor(rast_dict["image"]), targetPos, torch.tensor(ego_dict['target_availabilities']), agent_from_raster)
+        return (agentsHist, agentsHist.shape[0], torch.tensor(rast_dict["image"]).transpose(1, 2), targetPos, torch.tensor(ego_dict['target_availabilities']), agent_from_raster)
 
 def calculateTheta(transf):
     scale = (transf[0, 0]**2 + transf[1, 0]**2)**0.5

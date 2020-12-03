@@ -32,8 +32,9 @@ class MHAJAM(nn.Module):
         self.weight_values = nn.Conv2d(576, modelParams["cnn_out_channels"], kernel_size=1)
         self.query_fc = nn.Linear(64, modelParams["q_out_channels"]) #FC layer applied to queries
         
-        self.lstmDec = nn.LSTM(68, 128, 1)
-        self.lstmDecFc = nn.Linear(128, 2) #x, y
+        self.lstmDec = nn.LSTM(68, modelParams["decoder_size"], 1) #changed this to 128 bc now zl cat with other thing should be 128
+        self.lstmDecFc = nn.Linear(68, 2) #x, y
+        self.lstmOutputFc = nn.Linear(modelParams["decoder_size"], 68)
         
         # #Probability Generation
         self.attn_fc1 = nn.Linear(68*modelParams["num_heads"], modelParams["prob_fc1_out"]) 
@@ -59,7 +60,7 @@ class MHAJAM(nn.Module):
         lengths: [B]
         rastImg: (B, 5+2*Hist, rastWidth, rastHeight)
         """
-        agentsHist, lengths, rastImg, targetPos, _, agentFromRaster = inputs
+        agentsHist, lengths, rastImg, _, _, agentFromRaster = inputs
         B, N, H, _ = agentsHist.shape
         #raster image is just batch*224*224
         # svHistory tensor
@@ -95,6 +96,7 @@ class MHAJAM(nn.Module):
 
         # agentsHistBN = agentsHist.view(B*N, H, 3) #(B, N, H, 3) -> (B*N, H, 3)
         agentsHistBNOrigin = agentsHist.clone().detach()
+        agentsHistBNOrigin = agentsHistBNOrigin.to(self.device)
         agentsHistBNOrigin = agentsHistBNOrigin.view(B*N, H, 3)
         agentsHistBNOrigin[:, :, :2] = agentsHistBNOrigin[:, :, :2] - self.modelParams['raster_img_center_offset']
         _, (positionEncoding, _) = self.lstmEnc(self.leaky_relu(self.trajectoryfc(agentsHistBNOrigin))) # (B*N, H, 32)
@@ -111,8 +113,8 @@ class MHAJAM(nn.Module):
         #self.leaky_relu(hist_enc.view(hist_enc.shape[1],hist_enc.shape[2]))
 
         svPositionsAtT0 = agentsHist[:, 1:, 0, :]
-        socialTensor = rawToRasterScaleSocialState(rastImg.shape, rasterFeatures.shape, svPositionsAtT0, svEncoding, lengths)
-    
+        # socialTensor = rawToRasterScaleSocialState(rastImg.shape, rastImg.shape, svPositionsAtT0, svEncoding, lengths)
+        socialTensor = rawToRasterScaleSocialState(rastImg.shape, rasterFeatures.shape, svPositionsAtT0, svEncoding, lengths - 1)
 
         # #assuming social tensor is (channels, M, N)
         socialTensor = torch.cat((socialTensor, rasterFeatures), dim=1)
@@ -126,9 +128,9 @@ class MHAJAM(nn.Module):
         # print("key shape", keys.shape)
         # print("value shape", values.shape)
         keys = keys.permute(1, 0, 2, 3)
-        keys = keys.view((64, B, 784))
+        keys = keys.view((self.modelParams["cnn_out_channels"], B, 784)) #784 = 28*28
         values = values.permute(1, 0, 2, 3)
-        values = values.view((64, B, 784))
+        values = values.view((self.modelParams["cnn_out_channels"], B, 784))
         # print("new key shape", keys.shape)
         # print("new value shape", values.shape)
 
@@ -140,13 +142,12 @@ class MHAJAM(nn.Module):
         tvEncoding = tvEncoding.unsqueeze(0)
         attn_output, _ = self.attn(queries, keys, values)
         head_size = int(queries.shape[2] / self.modelParams["num_heads"]) #embed_dim / num_heads
-        # print(head_size)
         # #simulate l attention heads	
         decoded_outputs_t = []
         # print('tgpos shape', targetPos.shape)
         initPos = agentsHist[:,0, 0, 0:2].unsqueeze(1)
         # print('initpos shape', initPos.shape)
-        fullPos = torch.cat((initPos, targetPos), dim=1)
+        # fullPos = torch.cat((initPos, targetPos), dim=1)
 
         aggregatedPredictions = torch.zeros(B, self.modelParams["num_heads"], self.modelParams["future_num_frames"], 2).to(self.device)
         stackedz_l = None
@@ -161,19 +162,22 @@ class MHAJAM(nn.Module):
                 stackedz_l = inp
             else:
                 stackedz_l = torch.cat((stackedz_l, inp), dim=-1)
-            lstmHiddenAndCell = (torch.rand(1, z_l.shape[1], self.modelParams["decoder_size"]).to(self.device), torch.rand(1, z_l.shape[1], self.modelParams["decoder_size"]).to(self.device))
+            lstmHiddenAndCell = (torch.rand(1, B, self.modelParams["decoder_size"]).to(self.device), torch.rand(1, B, self.modelParams["decoder_size"]).to(self.device))
 
             # print(inp.shape)
-            predictions = torch.zeros(self.modelParams["future_num_frames"], B, self.modelParams["decoder_size"]).to(self.device) #50, 5, 128
+            predictions = torch.zeros(self.modelParams["future_num_frames"], B, 68).to(self.device) #50, 5, 128
             for j in range(self.modelParams["future_num_frames"]):
                 output, lstmHiddenAndCell = self.lstmDec(inp, lstmHiddenAndCell)
+                output = self.lstmOutputFc(output)
+                # print("lstmdec output shape", output.shape)
                 #inp = ?
                 #_, topi = torch.topk(output,1)
                 # topi = (batch*1)
                 #input = torch.transpose(topi,0,1)
-                predictions[j] = output
-                # print('out shape', output.shape)
 
+                predictions[j] = output
+                inp = output
+                # print('out shape', output.shape)
             predOutput = self.lstmDecFc(predictions) #50, 5, 2
             predOutput = predOutput.permute(1, 0, 2) #5, 50, 4
             aggregatedPredictions[:, i, :, :] = predOutput
@@ -193,10 +197,11 @@ class MHAJAM(nn.Module):
         aggregatedPredictions = aggregatedPredictions + self.modelParams['raster_img_center_offset']
 
         # Transform raster to agent for predictions
-        aggregatedPredictions = torch.cat((targetPos, torch.ones((B, self.modelParams["num_heads"], self.modelParams["future_num_frames"], 1))), dim=-1).unsqueeze(-1)
-        aggregatedPredictions = torch.matmul(agentFromRaster, aggregatedPredictions)[:, :, :, 2, 0]
+        aggregatedPredictions = torch.cat((aggregatedPredictions, torch.ones((B, self.modelParams["num_heads"], self.modelParams["future_num_frames"], 1)).to(self.device)), dim=-1).unsqueeze(-1)
+        aggPredRaster = aggregatedPredictions.clone().detach()
+        aggregatedPredictionsAgent = torch.matmul(agentFromRaster[:, None, None, :, :], aggregatedPredictions).squeeze(-1)[:, :, :, :2]
 
-        return (aggregatedPredictions, probability)
+        return (aggregatedPredictionsAgent, probability, aggPredRaster)
 
 
 def rawToRasterScaleSocialState(originalShape, newShape, svPositionsAtT0, svEncoding, lengths):
