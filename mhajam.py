@@ -225,15 +225,15 @@ def rawToRasterScaleSocialState(originalShape, newShape, svPositionsAtT0, svEnco
     for i in range(svPositionsAtT0.shape[1]): # N 周围agent的数量
         lenMask = lengths>i # mask is (B)
         x, y, _ = torch.split(svPositionsAtT0[:, i, :], 1, dim=-1) # x and y should both be (B).  This is the x val of the ith agent, in all batches
-        # 提取第i个agent的位置，x.shape（B,1,1）
+        # 提取第i个agent的位置，x.shape（B,1）, y.shape(B,1)
         svAgentiEncoding = svEncoding[:, i, :] #(B, 1, LSTMEncoderHidden) # 提取第i个agent的lstm输出 （B, LSTMEncoderHiddenSize）
         # print("sv Agent i encoding", svAgentiEncoding.shape) #should be (<=B, LSTMEncoderHiddenSize)
         
-        xIdx = (x * newW / oldW).long() #(224, 224) -> (28, 28)
-        yIdx = (y * newH / oldH).long()
+        xIdx = (x * newW / oldW).long() #(224, 224) -> (28, 28) #(B,1)
+        yIdx = (y * newH / oldH).long()  #(B,1)
 
-        xMask = (xIdx < newW).squeeze().to(device)
-        yMask = (yIdx < newH).squeeze().to(device)
+        xMask = (xIdx < newW).squeeze().to(device) # (B)
+        yMask = (yIdx < newH).squeeze().to(device) # (B)
         lenMask = lenMask.to(device)
 
         # print("un Anded Masks", xMask, yMask, maskT)
